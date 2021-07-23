@@ -1,0 +1,105 @@
+version: '2.4'
+services:
+    redis:
+        image: redis
+        networks: 
+            project-net2:
+                ipv4_address: 13.13.13.2
+        volumes: 
+            - ${PWD}/redis/data:/data
+    redis_insight:
+        image: redislabs/redisinsight
+        ports: 
+            - 8000:8001
+        networks: 
+            project-net2:
+                ipv4_address: 13.13.13.3
+        volumes: 
+            - ${PWD}/redisinsight/:/data
+        depends_on:
+            - redis
+    rsspy:
+        build: ./rsspy
+        image: rss:rsspy
+        networks:
+            project-net2:
+                ipv4_address: 13.13.13.1
+        volumes:
+            - ${PWD}/rsspy:/opt/rsspy
+        depends_on:
+            - redis
+            - rsslogstash
+        command: rss.py
+    rsslogstash:
+            image: docker.elastic.co/logstash/logstash:7.11.1
+            networks:
+                project-net2:
+                    ipv4_address: 13.13.13.4
+            volumes:
+                - ${PWD}/rsslogstash/pipeline:/usr/share/logstash/pipeline
+            environment: 
+                KAFKA_SERVER: "13.13.13.201:9092"
+            depends_on: 
+                - kafka
+    zookeeper:
+        image: rss:kafka
+        networks: 
+            project-net2:
+                ipv4_address: 13.13.13.200
+        environment: 
+            KAFKA_ACTION: "start-zk"
+    kafka:
+        image: rss:kafka
+        networks: 
+            project-net2:
+                ipv4_address: 13.13.13.201
+        environment: 
+            KAFKA_ACTION: "start-kafka"
+            KAFKA_TOPIC: "rss"
+        depends_on: 
+            - zookeeper
+    kafkaConsumer:
+        image: rss:kafka
+        networks: 
+            - project-net2
+        environment: 
+            KAFKA_ACTION: "consumer"
+            KAFKA_TOPIC: "rss"
+        depends_on:
+            - kafka
+    elasticsearch:
+        image: "docker.elastic.co/elasticsearch/elasticsearch:7.13.4"
+        networks: 
+            - project-net2
+        environment: 
+            discovery.type: "single-node"
+        mem_limit: "7G"
+        ports: 
+            - 9200:9200
+            - 9300:9300
+    kibana:
+        build: ./kibana
+        image: rss:kibana
+        networks:
+            - project-net2
+        depends_on: 
+            - elasticsearch
+        ports: 
+            - 5601:5601
+    spark:
+        build: ./spark
+        image: rss:spark
+        networks:
+            - project-net2
+        depends_on:
+            - elasticsearch
+        volumes: 
+            - ${PWD}/spark/code:/opt/tap/
+        environment: 
+            SPARK_SCRIPT: "entity.py"
+
+networks:
+    project-net2:
+        ipam:
+            config: 
+                - subnet: 13.13.0.0/16
