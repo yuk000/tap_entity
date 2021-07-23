@@ -1,0 +1,4 @@
+redis
+feedparser
+dateparser
+beautifulsoup4
